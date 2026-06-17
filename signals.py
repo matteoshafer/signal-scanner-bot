@@ -28,6 +28,7 @@ def _add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_short"] = ta.trend.EMAIndicator(close=df["close"], window=EMA_SHORT).ema_indicator()
     df["ema_long"]  = ta.trend.EMAIndicator(close=df["close"], window=EMA_LONG).ema_indicator()
     df["vol_ma"]    = df["volume"].rolling(window=VOLUME_MA_PERIOD).mean()
+    df["atr"]       = ta.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
     return df
 
 
@@ -165,6 +166,7 @@ def analyze(df: pd.DataFrame, has_volume: bool = True) -> tuple[int, list[str], 
         "ema_long":   last["ema_long"],
         "macd":       last["macd"],
         "macd_signal":last["macd_sig"],
+        "atr":        last["atr"],
     }
 
     return bear_score, bear_signals, bull_score, bull_signals, indicators

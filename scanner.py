@@ -17,8 +17,10 @@ from signals import analyze
 from telegram_bot import (
     get_credentials, send_message,
     format_signal_card, format_startup, format_status,
+    format_tp_alert, format_sl_alert, format_positions,
     poll_commands,
 )
+import positions as pos_tracker
 
 COMMAND_POLL_INTERVAL = 10
 
@@ -129,6 +131,49 @@ def run_scan(token: str, chat_id: str, state: BotState) -> None:
     state.next_scan_at    = time.time() + SCAN_INTERVAL
     state.session_alerts += len(alerts_sent)
 
+    # ── Check open positions for TP/SL hits ───────────────────────────────────
+    _check_positions(token, chat_id)
+
+
+# ── Position TP/SL monitor ────────────────────────────────────────────────────
+
+def _check_positions(token: str, chat_id: str) -> None:
+    open_pos = pos_tracker.get_open()
+    if not open_pos:
+        return
+
+    for symbol, pos in open_pos.items():
+        # Fetch current price
+        result = _find_symbol(symbol)
+        if not result:
+            continue
+        sym_info, _, _, fetch_fn, _ = result
+        try:
+            df = fetch_fn(sym_info["symbol"])
+            current = float(df["close"].iloc[-1])
+        except Exception:
+            continue
+
+        events = pos_tracker.check(symbol, current)
+        for event in events:
+            direction = pos["direction"]
+            entry     = pos["entry"]
+
+            if event == "stop":
+                msg = format_sl_alert(symbol, direction, entry, pos["stop"], current)
+                send_message(token, chat_id, msg)
+                print(f"  🛑 {symbol} stop hit at {current}")
+
+            elif event.startswith("tp"):
+                remaining = [
+                    f"TP{n[-1]}: {pos[n]:.4g}"
+                    for n in ("tp1", "tp2", "tp3")
+                    if not pos.get(f"{n}_hit") and n != event
+                ]
+                msg = format_tp_alert(symbol, direction, event, entry, pos[event], current, remaining)
+                send_message(token, chat_id, msg)
+                print(f"  🎯 {symbol} {event} hit at {current}")
+
 
 # ── /score on-demand ──────────────────────────────────────────────────────────
 
@@ -223,6 +268,73 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             send_message(token, chat_id,
                 "Usage: /score SYMBOL\n\nExamples:\n  /score BTC\n  /score TSLA\n  /score EURUSD")
 
+    elif cmd == "/trade":
+        # /trade SYMBOL bull|bear PRICE
+        if len(args) < 3:
+            send_message(token, chat_id,
+                "<b>Usage:</b> <code>/trade SYMBOL bull|bear PRICE</code>\n\n"
+                "Example: <code>/trade BTC bull 68500</code>")
+            return
+        sym_query, direction_raw = args[0], args[1].lower()
+        if direction_raw not in ("bull", "bear"):
+            send_message(token, chat_id, "Direction must be <code>bull</code> or <code>bear</code>.")
+            return
+        try:
+            entry_price = float(args[2])
+        except ValueError:
+            send_message(token, chat_id, f"Invalid price: <code>{html_escape(args[2])}</code>")
+            return
+
+        # Fetch ATR for this symbol to compute levels
+        result = _find_symbol(sym_query)
+        if not result:
+            send_message(token, chat_id, f"Unknown symbol: <code>{html_escape(sym_query)}</code>")
+            return
+        sym_info, _, _, fetch_fn, has_vol = result
+        try:
+            df      = fetch_fn(sym_info["symbol"])
+            _, _, _, _, indicators = analyze(df, has_volume=has_vol)
+            atr     = indicators.get("atr", float("nan"))
+            if atr != atr or atr <= 0:
+                send_message(token, chat_id, "Could not compute ATR for that symbol.")
+                return
+            levels  = pos_tracker.compute_levels(entry_price, atr, direction_raw)
+            pos_tracker.add(sym_info["display"], direction_raw, entry_price, levels)
+
+            def fmt(v: float) -> str:
+                return f"{v:,.2f}" if abs(v) >= 1000 else f"{v:.4g}"
+
+            arrow = "📈" if direction_raw == "bull" else "📉"
+            send_message(token, chat_id,
+                f"{arrow} <b>Position logged: {html_escape(sym_info['display'])} ({direction_raw.upper()})</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Entry:    <code>{fmt(entry_price)}</code>\n"
+                f"Stop:     <code>{fmt(levels['stop'])}</code>  (–{levels['risk_pct']:.1f}%)\n"
+                f"Target 1: <code>{fmt(levels['tp1'])}</code>  (+{levels['tp1_pct']:.1f}%)  1:1\n"
+                f"Target 2: <code>{fmt(levels['tp2'])}</code>  (+{levels['tp2_pct']:.1f}%)  1:2\n"
+                f"Target 3: <code>{fmt(levels['tp3'])}</code>  (+{levels['tp3_pct']:.1f}%)  1:3\n\n"
+                f"I'll alert you when price hits a target or your stop."
+            )
+        except Exception as exc:
+            send_message(token, chat_id, f"Error logging position: {html_escape(str(exc))}")
+
+    elif cmd == "/positions":
+        open_pos = pos_tracker.get_open()
+        send_message(token, chat_id, format_positions(open_pos))
+
+    elif cmd == "/close":
+        if not args:
+            send_message(token, chat_id, "Usage: <code>/close SYMBOL</code>  e.g. <code>/close BTC</code>")
+            return
+        sym = args[0].upper()
+        # Try to match display name
+        result = _find_symbol(sym)
+        lookup = result[0]["display"] if result else sym
+        if pos_tracker.close(lookup):
+            send_message(token, chat_id, f"Position <b>{html_escape(lookup)}</b> closed.")
+        else:
+            send_message(token, chat_id, f"No open position found for <code>{html_escape(sym)}</code>.")
+
     elif cmd in ("/help", "/commands"):
         send_message(token, chat_id,
             "<b>Commands</b>\n\n"
@@ -230,8 +342,12 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/stop — pause scanning\n"
             "/status — show bot status\n"
             "/score SYMBOL — scan any symbol now\n\n"
+            "<b>Trade tracking:</b>\n"
+            "/trade SYMBOL bull|bear PRICE — log a trade\n"
+            "/positions — show open positions\n"
+            "/close SYMBOL — close a position\n\n"
             "Symbols: BTC ETH SOL ADA XRP NEAR\n"
-            "         SPY QQQ AAPL TSLA NVDA\n"
+            "         SPY QQQ AAPL TSLA NVDA HOOD\n"
             "         EURUSD GBPUSD USDJPY AUDUSD")
     else:
         send_message(token, chat_id, f"Unknown command. Send /help for the list.")
