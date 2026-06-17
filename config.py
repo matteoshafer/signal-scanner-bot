@@ -6,8 +6,9 @@ CRYPTO_SYMBOLS = [
     {"symbol": "BTC/USD",  "display": "BTC/USD"},
     {"symbol": "ETH/USD",  "display": "ETH/USD"},
     {"symbol": "SOL/USD",  "display": "SOL/USD"},
-    {"symbol": "ADA/USD",  "display": "ADA/USD"},   # BNB not listed on Kraken; using ADA
+    {"symbol": "ADA/USD",  "display": "ADA/USD"},
     {"symbol": "XRP/USD",  "display": "XRP/USD"},
+    {"symbol": "NEAR/USD", "display": "NEAR/USD"},
 ]
 
 STOCK_SYMBOLS = [

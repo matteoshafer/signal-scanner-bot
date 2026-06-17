@@ -14,11 +14,12 @@ KRAKEN_BASE = "https://api.kraken.com/0/public"
 
 # Kraken uses non-standard pair names (XBT instead of BTC, etc.)
 _KRAKEN_PAIR: dict[str, str] = {
-    "BTC/USD": "XBTUSD",
-    "ETH/USD": "ETHUSD",
-    "SOL/USD": "SOLUSD",
-    "ADA/USD": "ADAUSD",
-    "XRP/USD": "XRPUSD",
+    "BTC/USD":  "XBTUSD",
+    "ETH/USD":  "ETHUSD",
+    "SOL/USD":  "SOLUSD",
+    "ADA/USD":  "ADAUSD",
+    "XRP/USD":  "XRPUSD",
+    "NEAR/USD": "NEARUSD",
 }
 
 # Kraken interval is in minutes

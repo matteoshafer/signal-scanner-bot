@@ -157,7 +157,7 @@ def format_startup(scan_interval: int = SCAN_INTERVAL, threshold: int = SCORE_TH
         f"Scans:      every {scan_interval // 60} minutes\n"
         f"Alert at:   score 55 or above\n\n"
         "Markets watched:\n"
-        "  Crypto  — BTC, ETH, SOL, ADA, XRP\n"
+        "  Crypto  — BTC, ETH, SOL, ADA, XRP, NEAR\n"
         "  Stocks  — SPY, QQQ, AAPL, TSLA, NVDA\n"
         "  Forex   — EUR/USD, GBP/USD, USD/JPY, AUD/USD\n\n"
         "Both bullish and bearish setups are tracked.\n\n"

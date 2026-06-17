@@ -230,7 +230,7 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/stop — pause scanning\n"
             "/status — show bot status\n"
             "/score SYMBOL — scan any symbol now\n\n"
-            "Symbols: BTC ETH SOL ADA XRP\n"
+            "Symbols: BTC ETH SOL ADA XRP NEAR\n"
             "         SPY QQQ AAPL TSLA NVDA\n"
             "         EURUSD GBPUSD USDJPY AUDUSD")
     else:
