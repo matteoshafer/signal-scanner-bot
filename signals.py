@@ -14,6 +14,7 @@ from config import (
     SCORE_RSI_REJECTION, SCORE_MACD_CROSSOVER,
     SCORE_PRICE_BELOW_EMA, SCORE_EMA_CROSS,
     SCORE_BEAR_ENGULF, SCORE_HIGH_VOL_RED, SCORE_LOWER_HIGH,
+    SCORE_FEAR_GREED,
 )
 
 RSI_OVERSOLD = 30
@@ -144,7 +145,20 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
     return min(score, 100), signals
 
 
-def analyze(df: pd.DataFrame, has_volume: bool = True) -> tuple[int, list[str], int, list[str], dict]:
+def _apply_fear_greed(value: int) -> tuple[int, int, str, str]:
+    """Returns (bull_points, bear_points, bull_signal, bear_signal) from Fear & Greed value."""
+    if value <= 24:
+        return SCORE_FEAR_GREED, 0, f"Market in Extreme Fear ({value}/100) — historically a buying opportunity", ""
+    if value <= 44:
+        return SCORE_FEAR_GREED // 2, 0, f"Market fear present ({value}/100) — contrarian bullish lean", ""
+    if value >= 76:
+        return 0, SCORE_FEAR_GREED, "", f"Market in Extreme Greed ({value}/100) — historically a sell signal"
+    if value >= 56:
+        return 0, SCORE_FEAR_GREED // 2, "", f"Elevated market greed ({value}/100) — contrarian bearish lean"
+    return 0, 0, "", ""  # Neutral (45-55)
+
+
+def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = None) -> tuple[int, list[str], int, list[str], dict]:
     """
     Returns (bear_score, bear_signals, bull_score, bull_signals, indicators).
     Scores are 0-100. Signal lists use plain-English descriptions.
@@ -159,14 +173,24 @@ def analyze(df: pd.DataFrame, has_volume: bool = True) -> tuple[int, list[str], 
     bear_score, bear_signals = _check_bearish(df, has_volume)
     bull_score, bull_signals = _check_bullish(df, has_volume)
 
+    if fear_greed is not None:
+        fg_bull, fg_bear, fg_bull_sig, fg_bear_sig = _apply_fear_greed(fear_greed)
+        if fg_bull and bull_score >= 30:
+            bull_score = min(bull_score + fg_bull, 100)
+            bull_signals.append(fg_bull_sig)
+        if fg_bear and bear_score >= 30:
+            bear_score = min(bear_score + fg_bear, 100)
+            bear_signals.append(fg_bear_sig)
+
     indicators = {
-        "close":      last["close"],
-        "rsi":        last["rsi"],
-        "ema_short":  last["ema_short"],
-        "ema_long":   last["ema_long"],
-        "macd":       last["macd"],
-        "macd_signal":last["macd_sig"],
-        "atr":        last["atr"],
+        "close":       last["close"],
+        "rsi":         last["rsi"],
+        "ema_short":   last["ema_short"],
+        "ema_long":    last["ema_long"],
+        "macd":        last["macd"],
+        "macd_signal": last["macd_sig"],
+        "atr":         last["atr"],
+        "fear_greed":  fear_greed,
     }
 
     return bear_score, bear_signals, bull_score, bull_signals, indicators

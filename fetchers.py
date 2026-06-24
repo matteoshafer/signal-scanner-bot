@@ -88,3 +88,11 @@ def fetch_forex(symbol: str, interval: str | None = None, period: str = "60d") -
     """Fetch OHLCV for a forex pair via yfinance.
     Volume is typically 0 for FX; callers should pass has_volume=False to analyze()."""
     return _fetch_yf(symbol, interval or FOREX_TIMEFRAME, period)
+
+
+def fetch_fear_greed() -> tuple[int, str]:
+    """Fetch Crypto Fear & Greed Index from alternative.me. Returns (value 0-100, classification)."""
+    r = requests.get("https://api.alternative.me/fng/", params={"limit": 1}, timeout=10)
+    r.raise_for_status()
+    data = r.json()["data"][0]
+    return int(data["value"]), data["value_classification"]

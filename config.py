@@ -61,6 +61,8 @@ LOWER_HIGH_LOOKBACK = 10     # candles used for lower-high pattern check
 
 # ── Signal weights (must sum ≤ 130; score is capped at 100) ──────────────────
 
+SCORE_FEAR_GREED       = 20  # max points from Fear & Greed index (crypto only, contrarian)
+
 SCORE_RSI_REJECTION    = 25
 SCORE_MACD_CROSSOVER   = 25
 SCORE_PRICE_BELOW_EMA  = 15

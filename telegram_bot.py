@@ -194,6 +194,14 @@ def format_status(
     )
 
 
+def _fear_greed_label(value: int) -> str:
+    if value <= 24: return "Extreme Fear 😱"
+    if value <= 44: return "Fear 😨"
+    if value <= 55: return "Neutral 😐"
+    if value <= 75: return "Greed 🤑"
+    return "Extreme Greed 🚀"
+
+
 def _score_bar(score: int, width: int = 20) -> str:
     filled = round(score / 100 * width)
     return "█" * filled + "░" * (width - filled)
@@ -251,11 +259,12 @@ def format_signal_card(
     indicators: dict,
     on_demand:  bool = False,
 ) -> str:
-    price  = indicators.get("close",     float("nan"))
-    rsi    = indicators.get("rsi",       float("nan"))
-    ema_s  = indicators.get("ema_short", float("nan"))
-    ema_l  = indicators.get("ema_long",  float("nan"))
-    atr    = indicators.get("atr",       float("nan"))
+    price      = indicators.get("close",      float("nan"))
+    rsi        = indicators.get("rsi",        float("nan"))
+    ema_s      = indicators.get("ema_short",  float("nan"))
+    ema_l      = indicators.get("ema_long",   float("nan"))
+    atr        = indicators.get("atr",        float("nan"))
+    fear_greed = indicators.get("fear_greed", None)
 
     def fmt(v: float, prec: int = 4) -> str:
         if v != v: return "N/A"
@@ -296,6 +305,12 @@ def format_signal_card(
     else:
         trade_section = ""
 
+    if fear_greed is not None:
+        fg_label = _fear_greed_label(fear_greed)
+        fg_line  = f"\n  Sentiment (F&amp;G): {fear_greed}/100 — {fg_label}"
+    else:
+        fg_line = ""
+
     return (
         f"<b>{title}</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -312,7 +327,7 @@ def format_signal_card(
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>KEY NUMBERS:</b>\n"
         f"  Momentum (RSI):  {fmt(rsi)}  —  {rsi_ctx}\n"
-        f"  {ema_ctx}\n\n"
+        f"  {ema_ctx}{fg_line}\n\n"
         f"{trade_section}"
         f"<i>Not financial advice. Always do your own research.</i>"
     )

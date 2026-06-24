@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -12,7 +14,7 @@ from config import (
     CRYPTO_TIMEFRAME, STOCK_TIMEFRAME, FOREX_TIMEFRAME,
     SCAN_INTERVAL, SCORE_THRESHOLD,
 )
-from fetchers import fetch_crypto, fetch_stock, fetch_forex
+from fetchers import fetch_crypto, fetch_stock, fetch_forex, fetch_fear_greed
 from signals import analyze
 from telegram_bot import (
     get_credentials, send_message,
@@ -23,6 +25,26 @@ from telegram_bot import (
 import positions as pos_tracker
 
 COMMAND_POLL_INTERVAL = 10
+
+_ALERT_STATE_FILE = os.path.join(os.path.dirname(__file__), "alert_state.json")
+
+
+def _load_active_signals() -> set[str]:
+    try:
+        with open(_ALERT_STATE_FILE) as f:
+            return set(json.load(f))
+    except (FileNotFoundError, ValueError):
+        return set()
+
+
+def _save_active_signals(active: set[str]) -> None:
+    with open(_ALERT_STATE_FILE, "w") as f:
+        json.dump(sorted(active), f)
+
+
+# Tracks which (display, direction) signals are currently active above threshold.
+# Persisted to disk so bot restarts don't re-fire the same alert.
+_active_signals: set[str] = _load_active_signals()
 
 
 # ── Bot state ─────────────────────────────────────────────────────────────────
@@ -73,11 +95,12 @@ def _scan_one(
     token:       str,
     chat_id:     str,
     alerts_sent: list,
+    fear_greed:  int | None = None,
 ) -> None:
     display = sym_info["display"]
     try:
         df = fetch_fn(sym_info["symbol"])
-        bear_score, bear_signals, bull_score, bull_signals, indicators = analyze(df, has_volume=has_volume)
+        bear_score, bear_signals, bull_score, bull_signals, indicators = analyze(df, has_volume=has_volume, fear_greed=fear_greed)
 
         _print_row(
             display, bear_score, bull_score,
@@ -86,11 +109,21 @@ def _scan_one(
         )
 
         for direction, score, signals in [("bear", bear_score, bear_signals), ("bull", bull_score, bull_signals)]:
+            key = f"{display}_{direction}"
             if score >= SCORE_THRESHOLD and signals:
+                if key in _active_signals:
+                    print(f"    ⏭  {display} ({direction}) already active — skipping")
+                    continue
                 card = format_signal_card(display, market, timeframe, direction, score, signals, indicators)
                 if send_message(token, chat_id, card):
+                    _active_signals.add(key)
+                    _save_active_signals(_active_signals)
                     print(f"    {'📉' if direction == 'bear' else '📈'}  {direction.upper()} alert sent — {score}/100")
                     alerts_sent.append(f"{display} ({direction})")
+            else:
+                if key in _active_signals:
+                    _active_signals.discard(key)
+                    _save_active_signals(_active_signals)
 
     except Exception as exc:
         print(f"  ⚠️  {display:<12} │ Error: {exc}")
@@ -108,9 +141,16 @@ def run_scan(token: str, chat_id: str, state: BotState) -> None:
 
     alerts_sent: list[str] = []
 
+    fg_value: int | None = None
+    try:
+        fg_value, fg_label = fetch_fear_greed()
+        print(f"\n  Fear & Greed: {fg_value}/100 — {fg_label}")
+    except Exception as exc:
+        print(f"  ⚠️  Fear & Greed fetch failed: {exc}")
+
     print("\n  ── Crypto (Kraken) ────────────────────────────────────────────")
     for sym in CRYPTO_SYMBOLS:
-        _scan_one(sym, "Crypto", CRYPTO_TIMEFRAME, fetch_crypto, True, token, chat_id, alerts_sent)
+        _scan_one(sym, "Crypto", CRYPTO_TIMEFRAME, fetch_crypto, True, token, chat_id, alerts_sent, fear_greed=fg_value)
 
     print("\n  ── Stocks ─────────────────────────────────────────────────────")
     for sym in STOCK_SYMBOLS:
@@ -208,8 +248,15 @@ def score_one(query: str, token: str, chat_id: str) -> None:
     send_message(token, chat_id, f"Scanning <b>{display}</b>...")
 
     try:
+        fg: int | None = None
+        if market == "Crypto":
+            try:
+                fg, _ = fetch_fear_greed()
+            except Exception:
+                pass
+
         df = fetch_fn(sym_info["symbol"])
-        bear_score, bear_signals, bull_score, bull_signals, indicators = analyze(df, has_volume=has_volume)
+        bear_score, bear_signals, bull_score, bull_signals, indicators = analyze(df, has_volume=has_volume, fear_greed=fg)
 
         # Always send both cards for on-demand scans
         for direction, score, signals in [("bear", bear_score, bear_signals), ("bull", bull_score, bull_signals)]:
@@ -331,6 +378,9 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
         result = _find_symbol(sym)
         lookup = result[0]["display"] if result else sym
         if pos_tracker.close(lookup):
+            _active_signals.discard(f"{lookup}_bull")
+            _active_signals.discard(f"{lookup}_bear")
+            _save_active_signals(_active_signals)
             send_message(token, chat_id, f"Position <b>{html_escape(lookup)}</b> closed.")
         else:
             send_message(token, chat_id, f"No open position found for <code>{html_escape(sym)}</code>.")
