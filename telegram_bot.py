@@ -202,6 +202,33 @@ def _fear_greed_label(value: int) -> str:
     return "Extreme Greed 🚀"
 
 
+def _recommend_sizing(score: int, stop_pct: float) -> str:
+    """Returns a position sizing recommendation based on signal score and stop distance."""
+    if stop_pct <= 0:
+        return ""
+    if score >= 85:
+        budget = 2.0
+    elif score >= 75:
+        budget = 1.5
+    else:
+        budget = 1.0
+
+    notional = budget / stop_pct  # fraction of portfolio needed at 1×
+
+    if notional <= 1.0:
+        return (
+            f"Suggested sizing:  <b>{notional * 100:.0f}% of portfolio</b>  (no leverage)\n"
+            f"  Risk budget: {budget:g}% of portfolio"
+        )
+    else:
+        leverage = min(round(notional, 1), 10.0)
+        size_at_lev = budget / stop_pct / leverage * 100
+        return (
+            f"Suggested sizing:  <b>{size_at_lev:.0f}% of portfolio at {leverage:g}× leverage</b>\n"
+            f"  Risk budget: {budget:g}% of portfolio"
+        )
+
+
 def _score_bar(score: int, width: int = 20) -> str:
     filled = round(score / 100 * width)
     return "█" * filled + "░" * (width - filled)
@@ -292,6 +319,7 @@ def format_signal_card(
         lvls = compute_levels(price, atr, direction)
         sym_upper = display.split("/")[0]
         trade_cmd = f"/trade {sym_upper} {direction} {fmt(price)}"
+        sizing_rec = _recommend_sizing(score, lvls['risk_pct'])
         trade_section = (
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"<b>TRADE PLAN</b>\n"
@@ -300,7 +328,8 @@ def format_signal_card(
             f"  Target 1:    <code>{fmt(lvls['tp1'])}</code>  (+{pct(lvls['tp1_pct'])})  → take 33%\n"
             f"  Target 2:    <code>{fmt(lvls['tp2'])}</code>  (+{pct(lvls['tp2_pct'])})  → take 33%\n"
             f"  Target 3:    <code>{fmt(lvls['tp3'])}</code>  (+{pct(lvls['tp3_pct'])})  → take 34%\n\n"
-            f"  To track: <code>{trade_cmd}</code>\n"
+            + (f"  {sizing_rec}\n\n" if sizing_rec else "")
+            + f"  To track: <code>{trade_cmd}</code>\n"
         )
     else:
         trade_section = ""
