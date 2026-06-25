@@ -55,7 +55,8 @@ def compute_levels(price: float, atr: float, direction: str) -> dict:
     }
 
 
-def add(symbol: str, direction: str, entry: float, levels: dict) -> None:
+def add(symbol: str, direction: str, entry: float, levels: dict,
+        leverage: float = 1.0, size_pct: float | None = None) -> None:
     data = _load()
     data[symbol.upper()] = {
         "direction": direction,
@@ -64,6 +65,8 @@ def add(symbol: str, direction: str, entry: float, levels: dict) -> None:
         "tp1":       levels["tp1"],  "tp1_hit": False,
         "tp2":       levels["tp2"],  "tp2_hit": False,
         "tp3":       levels["tp3"],  "tp3_hit": False,
+        "leverage":  leverage,
+        "size_pct":  size_pct,
         "status":    "open",
         "opened":    datetime.now(timezone.utc).isoformat(),
     }
@@ -103,15 +106,37 @@ def check(symbol: str, current_price: float) -> list[str]:
     return events
 
 
-def close(symbol: str) -> bool:
+def close(symbol: str, close_price: float | None = None) -> dict | None:
+    """
+    Mark a position closed. Returns a summary dict (for messaging) or None if not found.
+    close_price triggers P&L calculation; omit for TP/SL auto-closes or no-price manual closes.
+    """
     data = _load()
     key  = symbol.upper()
     if key not in data:
-        return False
-    data[key]["status"] = "closed"
-    data[key]["closed"] = datetime.now(timezone.utc).isoformat()
+        return None
+    pos = data[key]
+    pos["status"] = "closed"
+    pos["closed"] = datetime.now(timezone.utc).isoformat()
+
+    summary = {
+        "direction": pos["direction"],
+        "entry":     pos["entry"],
+        "leverage":  pos.get("leverage", 1.0),
+        "size_pct":  pos.get("size_pct"),
+        "close_price": close_price,
+        "pnl_pct":   None,
+        "pnl_leveraged_pct": None,
+    }
+    if close_price is not None:
+        raw = (close_price - pos["entry"]) / pos["entry"] * 100
+        if pos["direction"] == "bear":
+            raw = -raw
+        summary["pnl_pct"] = raw
+        summary["pnl_leveraged_pct"] = raw * pos.get("leverage", 1.0)
+
     _save(data)
-    return True
+    return summary
 
 
 def get_open() -> dict:

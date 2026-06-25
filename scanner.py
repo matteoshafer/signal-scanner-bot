@@ -20,6 +20,7 @@ from telegram_bot import (
     get_credentials, send_message,
     format_signal_card, format_startup, format_status,
     format_tp_alert, format_sl_alert, format_positions,
+    format_manual_close,
     poll_commands,
 )
 import positions as pos_tracker
@@ -316,11 +317,13 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
                 "Usage: /score SYMBOL\n\nExamples:\n  /score BTC\n  /score TSLA\n  /score EURUSD")
 
     elif cmd == "/trade":
-        # /trade SYMBOL bull|bear PRICE
+        # /trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]
         if len(args) < 3:
             send_message(token, chat_id,
-                "<b>Usage:</b> <code>/trade SYMBOL bull|bear PRICE</code>\n\n"
-                "Example: <code>/trade BTC bull 68500</code>")
+                "<b>Usage:</b> <code>/trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]</code>\n\n"
+                "Examples:\n"
+                "  <code>/trade BTC bull 68500</code>\n"
+                "  <code>/trade BTC bull 68500 5x 10%</code>")
             return
         sym_query, direction_raw = args[0], args[1].lower()
         if direction_raw not in ("bull", "bear"):
@@ -332,7 +335,17 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             send_message(token, chat_id, f"Invalid price: <code>{html_escape(args[2])}</code>")
             return
 
-        # Fetch ATR for this symbol to compute levels
+        leverage = 1.0
+        size_pct = None
+        for extra in args[3:]:
+            low = extra.lower()
+            if low.endswith("x"):
+                try: leverage = float(low[:-1])
+                except ValueError: pass
+            elif low.endswith("%"):
+                try: size_pct = float(low[:-1])
+                except ValueError: pass
+
         result = _find_symbol(sym_query)
         if not result:
             send_message(token, chat_id, f"Unknown symbol: <code>{html_escape(sym_query)}</code>")
@@ -346,20 +359,29 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
                 send_message(token, chat_id, "Could not compute ATR for that symbol.")
                 return
             levels  = pos_tracker.compute_levels(entry_price, atr, direction_raw)
-            pos_tracker.add(sym_info["display"], direction_raw, entry_price, levels)
+            pos_tracker.add(sym_info["display"], direction_raw, entry_price, levels,
+                            leverage=leverage, size_pct=size_pct)
 
             def fmt(v: float) -> str:
                 return f"{v:,.2f}" if abs(v) >= 1000 else f"{v:.4g}"
 
-            arrow = "📈" if direction_raw == "bull" else "📉"
+            arrow       = "📈" if direction_raw == "bull" else "📉"
+            sizing_line = ""
+            if leverage != 1.0 or size_pct is not None:
+                parts = []
+                if leverage != 1.0: parts.append(f"Leverage: <b>{leverage:g}×</b>")
+                if size_pct is not None: parts.append(f"Size: <b>{size_pct:g}% of portfolio</b>")
+                sizing_line = "━━━━━━━━━━━━━━━━━━━━\n" + "   ".join(parts) + "\n"
+
             send_message(token, chat_id,
                 f"{arrow} <b>Position logged: {html_escape(sym_info['display'])} ({direction_raw.upper()})</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"Entry:    <code>{fmt(entry_price)}</code>\n"
                 f"Stop:     <code>{fmt(levels['stop'])}</code>  (–{levels['risk_pct']:.1f}%)\n"
-                f"Target 1: <code>{fmt(levels['tp1'])}</code>  (+{levels['tp1_pct']:.1f}%)  1:1\n"
-                f"Target 2: <code>{fmt(levels['tp2'])}</code>  (+{levels['tp2_pct']:.1f}%)  1:2\n"
-                f"Target 3: <code>{fmt(levels['tp3'])}</code>  (+{levels['tp3_pct']:.1f}%)  1:3\n\n"
+                f"Target 1: <code>{fmt(levels['tp1'])}</code>  (+{levels['tp1_pct']:.1f}%)  → take 33%\n"
+                f"Target 2: <code>{fmt(levels['tp2'])}</code>  (+{levels['tp2_pct']:.1f}%)  → take 33%\n"
+                f"Target 3: <code>{fmt(levels['tp3'])}</code>  (+{levels['tp3_pct']:.1f}%)  → take 34%\n"
+                f"{sizing_line}\n"
                 f"I'll alert you when price hits a target or your stop."
             )
         except Exception as exc:
@@ -371,17 +393,27 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
 
     elif cmd == "/close":
         if not args:
-            send_message(token, chat_id, "Usage: <code>/close SYMBOL</code>  e.g. <code>/close BTC</code>")
+            send_message(token, chat_id,
+                "Usage: <code>/close SYMBOL [PRICE]</code>\n\n"
+                "Examples:\n  <code>/close BTC</code>\n  <code>/close BTC 70500</code>")
             return
         sym = args[0].upper()
-        # Try to match display name
+        close_price = None
+        if len(args) >= 2:
+            try:
+                close_price = float(args[1])
+            except ValueError:
+                send_message(token, chat_id, f"Invalid price: <code>{html_escape(args[1])}</code>")
+                return
+
         result = _find_symbol(sym)
         lookup = result[0]["display"] if result else sym
-        if pos_tracker.close(lookup):
+        summary = pos_tracker.close(lookup, close_price=close_price)
+        if summary:
             _active_signals.discard(f"{lookup}_bull")
             _active_signals.discard(f"{lookup}_bear")
             _save_active_signals(_active_signals)
-            send_message(token, chat_id, f"Position <b>{html_escape(lookup)}</b> closed.")
+            send_message(token, chat_id, format_manual_close(lookup, summary))
         else:
             send_message(token, chat_id, f"No open position found for <code>{html_escape(sym)}</code>.")
 
@@ -393,9 +425,11 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/status — show bot status\n"
             "/score SYMBOL — scan any symbol now\n\n"
             "<b>Trade tracking:</b>\n"
-            "/trade SYMBOL bull|bear PRICE — log a trade\n"
+            "/trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]\n"
+            "  e.g. /trade BTC bull 68500 5x 10%\n"
             "/positions — show open positions\n"
-            "/close SYMBOL — close a position\n\n"
+            "/close SYMBOL [PRICE] — close a position\n"
+            "  e.g. /close BTC 70500\n\n"
             "Symbols: BTC ETH SOL ADA XRP NEAR\n"
             "         SPY QQQ AAPL TSLA NVDA HOOD\n"
             "         EURUSD GBPUSD USDJPY AUDUSD")

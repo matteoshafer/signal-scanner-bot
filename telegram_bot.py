@@ -297,9 +297,9 @@ def format_signal_card(
             f"<b>TRADE PLAN</b>\n"
             f"  Entry zone:  <code>{fmt(price)}</code>\n"
             f"  Stop loss:   <code>{fmt(lvls['stop'])}</code>  (–{pct(lvls['risk_pct'])})\n"
-            f"  Target 1:    <code>{fmt(lvls['tp1'])}</code>  (+{pct(lvls['tp1_pct'])})  1:1\n"
-            f"  Target 2:    <code>{fmt(lvls['tp2'])}</code>  (+{pct(lvls['tp2_pct'])})  1:2\n"
-            f"  Target 3:    <code>{fmt(lvls['tp3'])}</code>  (+{pct(lvls['tp3_pct'])})  1:3\n\n"
+            f"  Target 1:    <code>{fmt(lvls['tp1'])}</code>  (+{pct(lvls['tp1_pct'])})  → take 33%\n"
+            f"  Target 2:    <code>{fmt(lvls['tp2'])}</code>  (+{pct(lvls['tp2_pct'])})  → take 33%\n"
+            f"  Target 3:    <code>{fmt(lvls['tp3'])}</code>  (+{pct(lvls['tp3_pct'])})  → take 34%\n\n"
             f"  To track: <code>{trade_cmd}</code>\n"
         )
     else:
@@ -377,24 +377,76 @@ def format_positions(open_positions: dict) -> str:
         return "No open positions.\n\nUse <code>/trade SYMBOL bull 105.21</code> to log a trade."
 
     lines = ["<b>Open Positions</b>\n━━━━━━━━━━━━━━━━━━━━"]
+    tp_take = {"tp1": "33%", "tp2": "33%", "tp3": "34%"}
+
     for sym, pos in open_positions.items():
         direction = pos["direction"].upper()
         arrow     = "📈" if pos["direction"] == "bull" else "📉"
+        leverage  = pos.get("leverage", 1.0)
+        size_pct  = pos.get("size_pct")
 
         def fmt(v: float) -> str:
             if abs(v) >= 1000: return f"{v:,.2f}"
             return f"{v:.4g}"
 
+        sizing = ""
+        if leverage != 1.0 or size_pct is not None:
+            parts = []
+            if leverage != 1.0: parts.append(f"{leverage:g}× leverage")
+            if size_pct is not None: parts.append(f"{size_pct:g}% portfolio")
+            sizing = "  " + "  ·  ".join(parts) + "\n"
+
         tp_status = ""
         for tp in ("tp1", "tp2", "tp3"):
-            hit = "✅" if pos.get(f"{tp}_hit") else "⏳"
-            tp_status += f"  {hit} {tp.upper()}: {fmt(pos[tp])}\n"
+            hit   = "✅" if pos.get(f"{tp}_hit") else "⏳"
+            take  = tp_take[tp]
+            tp_status += f"  {hit} {tp.upper()}: {fmt(pos[tp])}  → take {take}\n"
 
         lines.append(
             f"\n{arrow} <b>{sym}</b>  ({direction})\n"
             f"  Entry: {fmt(pos['entry'])}   Stop: {fmt(pos['stop'])}\n"
+            f"{sizing}"
             f"{tp_status}"
             f"  /close {sym}"
         )
+
+    return "\n".join(lines)
+
+
+def format_manual_close(symbol: str, summary: dict) -> str:
+    direction   = summary["direction"].upper()
+    arrow       = "📈" if summary["direction"] == "bull" else "📉"
+    entry       = summary["entry"]
+    close_price = summary.get("close_price")
+    pnl         = summary.get("pnl_pct")
+    pnl_lev     = summary.get("pnl_leveraged_pct")
+    leverage    = summary.get("leverage", 1.0)
+    size_pct    = summary.get("size_pct")
+
+    def fmt(v: float) -> str:
+        if abs(v) >= 1000: return f"{v:,.2f}"
+        return f"{v:.4g}"
+
+    lines = [
+        f"✅ <b>Position closed: {html.escape(symbol)} ({direction})</b>",
+        f"━━━━━━━━━━━━━━━━━━━━",
+        f"Entry:  <code>{fmt(entry)}</code>",
+    ]
+
+    if close_price is not None:
+        lines.append(f"Exit:   <code>{fmt(close_price)}</code>")
+
+    if pnl is not None:
+        sign  = "+" if pnl >= 0 else ""
+        emoji = "🟢" if pnl >= 0 else "🔴"
+        lines.append(f"P&amp;L:   {emoji} <b>{sign}{pnl:.2f}%</b> (raw)")
+        if leverage != 1.0 and pnl_lev is not None:
+            lines.append(f"        {emoji} <b>{sign}{pnl_lev:.2f}%</b> at {leverage:g}× leverage")
+        if size_pct is not None and pnl is not None:
+            portfolio_impact = pnl * (size_pct / 100)
+            if leverage != 1.0:
+                portfolio_impact *= leverage
+            sign2 = "+" if portfolio_impact >= 0 else ""
+            lines.append(f"Portfolio impact: <b>{sign2}{portfolio_impact:.2f}%</b> ({size_pct:g}% size)")
 
     return "\n".join(lines)
