@@ -30,7 +30,7 @@ FOREX_SYMBOLS = [
 # ── Timing ────────────────────────────────────────────────────────────────────
 
 SCAN_INTERVAL = 300          # seconds between full scans (5 min)
-SCORE_THRESHOLD = 55         # minimum score to fire a Telegram alert
+SCORE_THRESHOLD = 65         # minimum score to fire a Telegram alert
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
 
