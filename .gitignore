@@ -1,12 +1,16 @@
 .env
 scanner.log
 positions.json
+alert_state.json
+mcp_alert_state.json
+signal_log.json
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 venv/
+venv_mcp/
 .venv/
 env/
 *.egg-info/
