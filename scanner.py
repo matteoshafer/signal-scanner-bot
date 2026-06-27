@@ -20,7 +20,7 @@ from telegram_bot import (
     get_credentials, send_message,
     format_signal_card, format_startup, format_status,
     format_tp_alert, format_sl_alert, format_positions,
-    format_manual_close,
+    format_manual_close, format_scan_summary,
     poll_commands,
 )
 import positions as pos_tracker
@@ -316,6 +316,44 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             send_message(token, chat_id,
                 "Usage: /score SYMBOL\n\nExamples:\n  /score BTC\n  /score TSLA\n  /score EURUSD")
 
+    elif cmd == "/scan":
+        send_message(token, chat_id, "Scanning all markets…")
+        fg_value: int | None = None
+        fg_label: str = ""
+        try:
+            fg_value, fg_label = fetch_fear_greed()
+        except Exception:
+            pass
+
+        results = []
+        for sym_info, market, timeframe, fetch_fn, has_volume in _ALL_SYMBOLS:
+            display = sym_info["display"]
+            try:
+                df = fetch_fn(sym_info["symbol"])
+                fg = fg_value if market == "Crypto" else None
+                bear, bear_sigs, bull, bull_sigs, ind = analyze(df, has_volume=has_volume, fear_greed=fg)
+                results.append({
+                    "display":   display,
+                    "market":    market,
+                    "bear":      bear,
+                    "bull":      bull,
+                    "bear_sigs": bear_sigs,
+                    "bull_sigs": bull_sigs,
+                    "price":     ind.get("close", float("nan")),
+                    "rsi":       ind.get("rsi",   float("nan")),
+                })
+            except Exception as exc:
+                results.append({
+                    "display": display, "market": market,
+                    "bear": 0, "bull": 0,
+                    "bear_sigs": [], "bull_sigs": [],
+                    "price": float("nan"), "rsi": float("nan"),
+                })
+
+        fg_pair = (fg_value, fg_label) if fg_value is not None else None
+        msg = format_scan_summary(results, fg_pair, SCORE_THRESHOLD)
+        send_message(token, chat_id, msg)
+
     elif cmd == "/trade":
         # /trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]
         if len(args) < 3:
@@ -423,7 +461,8 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/start — resume scanning\n"
             "/stop — pause scanning\n"
             "/status — show bot status\n"
-            "/score SYMBOL — scan any symbol now\n\n"
+            "/scan — full snapshot of all markets right now\n"
+            "/score SYMBOL — deep score for one symbol\n\n"
             "<b>Trade tracking:</b>\n"
             "/trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]\n"
             "  e.g. /trade BTC bull 68500 5x 10%\n"

@@ -442,6 +442,70 @@ def format_positions(open_positions: dict) -> str:
     return "\n".join(lines)
 
 
+def format_scan_summary(results: list[dict], fear_greed: tuple | None, threshold: int) -> str:
+    """
+    Format a full scan summary table for Telegram.
+    results: list of dicts with keys: display, bear, bull, price, rsi, bear_sigs, bull_sigs
+    fear_greed: (value, label) or None
+    """
+    now = datetime.now(timezone.utc).strftime("%d %b · %H:%M UTC")
+    lines = [f"🔍 <b>Full Scan</b>  ·  {now}"]
+
+    if fear_greed:
+        lines.append(f"Fear &amp; Greed: <b>{fear_greed[0]}/100</b> — {html.escape(fear_greed[1])}")
+
+    lines.append("")
+
+    groups = {"Crypto": [], "Stock": [], "Forex": []}
+    for r in results:
+        groups[r["market"]].append(r)
+
+    for group_name, rows in groups.items():
+        if not rows:
+            continue
+        lines.append(f"<b>{group_name}</b>")
+        for r in rows:
+            bear, bull = r["bear"], r["bull"]
+            price = r["price"]
+            rsi   = r["rsi"]
+
+            if price == price and price > 0:
+                price_s = f"{price:,.2f}" if price >= 100 else f"{price:.5g}"
+            else:
+                price_s = "N/A"
+
+            rsi_s = f"{rsi:.0f}" if rsi == rsi else "—"
+
+            if bear >= threshold:
+                flag = f"  📉 {bear}/100"
+            elif bull >= threshold:
+                flag = f"  📈 {bull}/100"
+            else:
+                flag = ""
+
+            lines.append(
+                f"  <code>{r['display']:<9}</code>  "
+                f"🐻{bear:>3}  🐂{bull:>3}  "
+                f"<code>{price_s:>10}</code>  RSI {rsi_s}{flag}"
+            )
+        lines.append("")
+
+    alerts = [r for r in results if r["bear"] >= threshold or r["bull"] >= threshold]
+    if alerts:
+        lines.append("⚠️ <b>Signals above threshold:</b>")
+        for r in alerts:
+            if r["bear"] >= threshold:
+                sigs = "; ".join(r["bear_sigs"][:2])
+                lines.append(f"  📉 {r['display']} — {html.escape(sigs)}")
+            if r["bull"] >= threshold:
+                sigs = "; ".join(r["bull_sigs"][:2])
+                lines.append(f"  📈 {r['display']} — {html.escape(sigs)}")
+    else:
+        lines.append(f"No signals above {threshold}/100.")
+
+    return "\n".join(lines)
+
+
 def format_manual_close(symbol: str, summary: dict) -> str:
     direction   = summary["direction"].upper()
     arrow       = "📈" if summary["direction"] == "bull" else "📉"
