@@ -24,6 +24,7 @@ from telegram_bot import (
     poll_commands,
 )
 import positions as pos_tracker
+import signal_log
 
 COMMAND_POLL_INTERVAL = 10
 
@@ -121,6 +122,16 @@ def _scan_one(
                     _save_active_signals(_active_signals)
                     print(f"    {'📉' if direction == 'bear' else '📈'}  {direction.upper()} alert sent — {score}/100")
                     alerts_sent.append(f"{display} ({direction})")
+                    # Log every signal regardless of whether user takes the trade
+                    price = indicators.get("close", float("nan"))
+                    atr   = indicators.get("atr",   float("nan"))
+                    if price == price and atr == atr and atr > 0:
+                        lvls = pos_tracker.compute_levels(price, atr, direction)
+                        signal_log.log_signal(
+                            symbol=display, direction=direction, score=score,
+                            entry_price=price, stop=lvls["stop"], tp1=lvls["tp1"],
+                            risk_pct=lvls["risk_pct"], signals=signals,
+                        )
             else:
                 if key in _active_signals:
                     _active_signals.discard(key)
@@ -174,6 +185,32 @@ def run_scan(token: str, chat_id: str, state: BotState) -> None:
 
     # ── Check open positions for TP/SL hits ───────────────────────────────────
     _check_positions(token, chat_id)
+
+    # ── Resolve open signal outcomes ──────────────────────────────────────────
+    _resolve_signal_outcomes()
+
+
+# ── Signal outcome resolver ───────────────────────────────────────────────────
+
+def _resolve_signal_outcomes() -> None:
+    open_sigs = {s["symbol"] for s in signal_log.get_all().values() if s["outcome"] == "open"}
+    if not open_sigs:
+        return
+
+    current_prices: dict[str, float] = {}
+    for sym_info, market, timeframe, fetch_fn, has_volume in _ALL_SYMBOLS:
+        if sym_info["display"] not in open_sigs:
+            continue
+        try:
+            df = fetch_fn(sym_info["symbol"])
+            current_prices[sym_info["display"]] = float(df["close"].iloc[-1])
+        except Exception:
+            pass
+
+    resolved = signal_log.resolve_outcomes(current_prices)
+    for sig in resolved:
+        outcome = "✅ WIN" if sig["outcome"] == "win" else "❌ LOSS"
+        print(f"  {outcome}  signal {sig['id']} — {sig['symbol']} ({sig['direction']}) resolved")
 
 
 # ── Position TP/SL monitor ────────────────────────────────────────────────────
@@ -455,6 +492,34 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
         else:
             send_message(token, chat_id, f"No open position found for <code>{html_escape(sym)}</code>.")
 
+    elif cmd == "/signals":
+        stats = signal_log.get_stats()
+        if stats["total"] == 0:
+            send_message(token, chat_id, "No signals logged yet — they get recorded automatically each scan.")
+            return
+        win_rate = f"{stats['win_rate']:.1f}%" if stats["win_rate"] is not None else "n/a"
+        avg_w    = f"+{stats['avg_score_wins']:.1f}" if stats["avg_score_wins"] is not None else "—"
+        avg_l    = f"{stats['avg_score_losses']:.1f}" if stats["avg_score_losses"] is not None else "—"
+        lines = [
+            "<b>Signal Performance</b>",
+            "━━━━━━━━━━━━━━━━━━━━",
+            f"Total logged: <b>{stats['total']}</b>  ({stats['open']} open · {stats['wins']}W · {stats['losses']}L)",
+            f"Win rate:     <b>{win_rate}</b>",
+            f"Avg score — winners: {avg_w}   losers: {avg_l}",
+            "",
+            "<b>By symbol:</b>",
+        ]
+        for sym, c in sorted(stats["by_symbol"].items()):
+            closed = c["wins"] + c["losses"]
+            wr = f"{c['wins'] / closed * 100:.0f}%" if closed else "—"
+            lines.append(f"  {sym:<12}  {c['wins']}W/{c['losses']}L  ({c['open']} open)  {wr}")
+        lines += ["", "<b>By direction:</b>"]
+        for d, c in sorted(stats["by_direction"].items()):
+            closed = c["wins"] + c["losses"]
+            wr = f"{c['wins'] / closed * 100:.0f}%" if closed else "—"
+            lines.append(f"  {d.capitalize():<6}  {c['wins']}W/{c['losses']}L  ({c['open']} open)  {wr}")
+        send_message(token, chat_id, "\n".join(lines))
+
     elif cmd == "/history":
         history = pos_tracker.get_history()
         stats   = pos_tracker.get_summary()
@@ -467,7 +532,8 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/stop — pause scanning\n"
             "/status — show bot status\n"
             "/scan — full snapshot of all markets right now\n"
-            "/score SYMBOL — deep score for one symbol\n\n"
+            "/score SYMBOL — deep score for one symbol\n"
+            "/signals — win rate for all logged signals\n\n"
             "<b>Trade tracking:</b>\n"
             "/trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]\n"
             "  e.g. /trade BTC bull 68500 5x 10%\n"
