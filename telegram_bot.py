@@ -506,6 +506,65 @@ def format_scan_summary(results: list[dict], fear_greed: tuple | None, threshold
     return "\n".join(lines)
 
 
+def format_trade_history(history: list[dict], stats: dict) -> str:
+    if not history:
+        return "No closed trades yet.\n\nClose a position with <code>/close SYMBOL PRICE</code>."
+
+    def fmt(v: float) -> str:
+        if abs(v) >= 1000: return f"{v:,.2f}"
+        return f"{v:.4g}"
+
+    lines = ["<b>Trade History</b>", "━━━━━━━━━━━━━━━━━━━━"]
+
+    for pos in history:
+        sym       = html.escape(pos["symbol"])
+        direction = pos["direction"].upper()
+        arrow     = "📈" if pos["direction"] == "bull" else "📉"
+        status    = pos["status"]
+        entry     = pos["entry"]
+        pnl       = pos.get("pnl_pct")
+        leverage  = pos.get("leverage", 1.0)
+        opened    = pos.get("opened", "")[:10]
+        closed_at = pos.get("closed", "")[:10] or "—"
+
+        if pnl is not None:
+            sign  = "+" if pnl >= 0 else ""
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            pnl_s = f"{emoji} {sign}{pnl:.2f}%"
+            if leverage != 1.0:
+                lev_pnl = pnl * leverage
+                sign2   = "+" if lev_pnl >= 0 else ""
+                pnl_s  += f"  ({sign2}{lev_pnl:.2f}% at {leverage:g}×)"
+        elif status == "stopped":
+            pnl_s = "🛑 stopped (no exit price)"
+        else:
+            pnl_s = "— (no exit price)"
+
+        lines.append(
+            f"\n{arrow} <b>{sym}</b> ({direction})  ·  {opened} → {closed_at}\n"
+            f"  Entry {fmt(entry)}   P&amp;L {pnl_s}"
+        )
+
+    lines.append("\n━━━━━━━━━━━━━━━━━━━━")
+    if stats.get("win_rate") is not None:
+        wr = stats["win_rate"]
+        tw = stats.get("total_pnl", 0.0)
+        sign = "+" if tw >= 0 else ""
+        lines.append(
+            f"<b>{stats['wins']}W / {stats['losses']}L</b>  ·  "
+            f"Win rate <b>{wr:.0f}%</b>  ·  Total P&amp;L <b>{sign}{tw:.2f}%</b>"
+        )
+        if stats.get("avg_win") is not None:
+            lines.append(
+                f"Avg win <b>+{stats['avg_win']:.2f}%</b>  ·  "
+                f"Avg loss <b>{stats['avg_loss']:.2f}%</b>"
+            )
+    else:
+        lines.append(f"{stats['total']} closed trade(s) — no P&amp;L data recorded.")
+
+    return "\n".join(lines)
+
+
 def format_manual_close(symbol: str, summary: dict) -> str:
     direction   = summary["direction"].upper()
     arrow       = "📈" if summary["direction"] == "bull" else "📉"

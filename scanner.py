@@ -20,7 +20,7 @@ from telegram_bot import (
     get_credentials, send_message,
     format_signal_card, format_startup, format_status,
     format_tp_alert, format_sl_alert, format_positions,
-    format_manual_close, format_scan_summary,
+    format_manual_close, format_scan_summary, format_trade_history,
     poll_commands,
 )
 import positions as pos_tracker
@@ -455,6 +455,11 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
         else:
             send_message(token, chat_id, f"No open position found for <code>{html_escape(sym)}</code>.")
 
+    elif cmd == "/history":
+        history = pos_tracker.get_history()
+        stats   = pos_tracker.get_summary()
+        send_message(token, chat_id, format_trade_history(history, stats))
+
     elif cmd in ("/help", "/commands"):
         send_message(token, chat_id,
             "<b>Commands</b>\n\n"
@@ -467,6 +472,7 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "/trade SYMBOL bull|bear PRICE [LEVERAGEx] [SIZE%]\n"
             "  e.g. /trade BTC bull 68500 5x 10%\n"
             "/positions — show open positions\n"
+            "/history — closed trade history &amp; P&amp;L summary\n"
             "/close SYMBOL [PRICE] — close a position\n"
             "  e.g. /close BTC 70500\n\n"
             "Symbols: BTC ETH SOL ADA XRP NEAR\n"

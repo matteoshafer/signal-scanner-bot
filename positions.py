@@ -141,3 +141,42 @@ def close(symbol: str, close_price: float | None = None) -> dict | None:
 
 def get_open() -> dict:
     return {k: v for k, v in _load().items() if v["status"] == "open"}
+
+
+def get_history() -> list[dict]:
+    """Return all closed/stopped positions sorted newest first."""
+    data = _load()
+    closed = [
+        {"symbol": k, **v}
+        for k, v in data.items()
+        if v["status"] in ("closed", "stopped")
+    ]
+    closed.sort(key=lambda p: p.get("closed", p.get("opened", "")), reverse=True)
+    return closed
+
+
+def get_summary() -> dict:
+    """Aggregate stats across all closed trades."""
+    history = get_history()
+    if not history:
+        return {"total": 0}
+
+    wins   = [p for p in history if p.get("pnl_pct") is not None and p["pnl_pct"] > 0]
+    losses = [p for p in history if p.get("pnl_pct") is not None and p["pnl_pct"] <= 0]
+    no_pnl = [p for p in history if p.get("pnl_pct") is None]
+    closed = len(wins) + len(losses)
+
+    total_pnl = sum(p["pnl_pct"] for p in wins + losses)
+    avg_win    = sum(p["pnl_pct"] for p in wins)   / len(wins)   if wins   else None
+    avg_loss   = sum(p["pnl_pct"] for p in losses) / len(losses) if losses else None
+
+    return {
+        "total":     len(history),
+        "wins":      len(wins),
+        "losses":    len(losses),
+        "no_pnl":    len(no_pnl),
+        "win_rate":  len(wins) / closed * 100 if closed else None,
+        "total_pnl": total_pnl,
+        "avg_win":   avg_win,
+        "avg_loss":  avg_loss,
+    }

@@ -364,6 +364,59 @@ def get_fear_greed() -> str:
 
 
 @mcp.tool()
+def trade_history() -> str:
+    """Show all closed trades with P&L and a win/loss summary."""
+    history = pos_tracker.get_history()
+    stats   = pos_tracker.get_summary()
+
+    if not history:
+        return "No closed trades yet. Use close_position() to close a trade."
+
+    def fmt(v: float) -> str:
+        if abs(v) >= 1000: return f"{v:,.2f}"
+        return f"{v:.4g}"
+
+    lines = ["Trade History", "═════════════"]
+    for pos in history:
+        sym       = pos["symbol"]
+        direction = pos["direction"].upper()
+        arrow     = "📈" if pos["direction"] == "bull" else "📉"
+        entry     = pos["entry"]
+        pnl       = pos.get("pnl_pct")
+        leverage  = pos.get("leverage", 1.0)
+        opened    = pos.get("opened", "")[:10]
+        closed_at = pos.get("closed", "")[:10] or "—"
+
+        if pnl is not None:
+            sign  = "+" if pnl >= 0 else ""
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            pnl_s = f"{emoji} {sign}{pnl:.2f}%"
+            if leverage != 1.0:
+                lev_pnl = pnl * leverage
+                sign2   = "+" if lev_pnl >= 0 else ""
+                pnl_s  += f"  ({sign2}{lev_pnl:.2f}% at {leverage:g}×)"
+        elif pos["status"] == "stopped":
+            pnl_s = "🛑 stopped (no exit price)"
+        else:
+            pnl_s = "— (no exit price)"
+
+        lines.append(f"\n{arrow} {sym} ({direction})  {opened} → {closed_at}")
+        lines.append(f"  Entry {fmt(entry)}   P&L {pnl_s}")
+
+    lines.append("\n─────────────")
+    if stats.get("win_rate") is not None:
+        tw   = stats.get("total_pnl", 0.0)
+        sign = "+" if tw >= 0 else ""
+        lines.append(f"{stats['wins']}W / {stats['losses']}L  ·  Win rate {stats['win_rate']:.0f}%  ·  Total P&L {sign}{tw:.2f}%")
+        if stats.get("avg_win") is not None:
+            lines.append(f"Avg win +{stats['avg_win']:.2f}%  ·  Avg loss {stats['avg_loss']:.2f}%")
+    else:
+        lines.append(f"{stats['total']} closed trade(s) — no P&L data (close with a price to track)")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
 def check_signal_outcomes() -> str:
     """
     Fetch current prices for all open logged signals and mark them as wins or losses.
@@ -499,6 +552,10 @@ log_trade(symbol, direction, entry_price, leverage?, size_pct?)
 get_positions()
   List all open positions with entry, stop, and TP levels (✅ = hit, ⏳ = pending).
   Example: "show my positions"
+
+trade_history()
+  All closed trades with P&L per trade and summary stats (win rate, avg win/loss, total P&L).
+  Example: "show my trade history" / "how have my trades done"
 
 close_position(symbol, close_price?)
   Mark a position closed and calculate P&L (raw % and leveraged %).
