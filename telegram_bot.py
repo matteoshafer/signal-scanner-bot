@@ -155,7 +155,7 @@ def format_startup(scan_interval: int = SCAN_INTERVAL, threshold: int = SCORE_TH
         "━━━━━━━━━━━━━━━━━━━━\n"
         f"Started:    {now}\n"
         f"Scans:      every {scan_interval // 60} minutes\n"
-        f"Alert at:   score 55 or above\n\n"
+        f"Alert at:   score {threshold} or above\n\n"
         "Markets watched:\n"
         "  Crypto  — BTC, ETH, SOL, ADA, XRP, NEAR\n"
         "  Stocks  — SPY, QQQ, AAPL, TSLA, NVDA\n"

@@ -459,6 +459,7 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
                 f"{sizing_line}\n"
                 f"I'll alert you when price hits a target or your stop."
             )
+            send_message(token, chat_id, format_positions(pos_tracker.get_open()))
         except Exception as exc:
             send_message(token, chat_id, f"Error logging position: {html_escape(str(exc))}")
 

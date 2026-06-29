@@ -30,7 +30,7 @@ FOREX_SYMBOLS = [
 # ── Timing ────────────────────────────────────────────────────────────────────
 
 SCAN_INTERVAL = 300          # seconds between full scans (5 min)
-SCORE_THRESHOLD = 65         # minimum score to fire a Telegram alert
+SCORE_THRESHOLD = 55         # minimum score to fire a Telegram alert
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ RSI_LOOKBACK    = 5          # candles to look back for overbought condition
 MACD_FAST       = 12
 MACD_SLOW       = 26
 MACD_SIGNAL     = 9
-MACD_CROSS_BACK = 3          # candles to look back for fresh crossover
+MACD_CROSS_BACK = 5          # candles to look back for fresh crossover
 
 EMA_SHORT       = 20
 EMA_LONG        = 50
