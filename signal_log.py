@@ -102,7 +102,8 @@ def get_stats() -> dict:
         for key, bucket in [(sig["symbol"], by_symbol), (sig["direction"], by_dir)]:
             if key not in bucket:
                 bucket[key] = {"wins": 0, "losses": 0, "open": 0}
-            bucket[key][sig["outcome"] if sig["outcome"] in ("win", "loss") else "open"] += 1
+            outcome_key = "wins" if sig["outcome"] == "win" else "losses" if sig["outcome"] == "loss" else "open"
+            bucket[key][outcome_key] += 1
 
     def avg(sigs: list[dict]) -> float | None:
         scores = [s["score"] for s in sigs]
