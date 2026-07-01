@@ -12,9 +12,9 @@ from config import (
     VOLUME_MA_PERIOD, VOLUME_MULTIPLIER,
     LOWER_HIGH_LOOKBACK,
     SCORE_RSI_REJECTION, SCORE_MACD_CROSSOVER,
-    SCORE_PRICE_BELOW_EMA, SCORE_EMA_CROSS,
+    SCORE_PRICE_BELOW_EMA, SCORE_EMA_ALIGN, SCORE_EMA_COUNTER, SCORE_MOMENTUM,
     SCORE_BEAR_ENGULF, SCORE_HIGH_VOL_RED, SCORE_LOWER_HIGH,
-    SCORE_FEAR_GREED,
+    SCORE_FEAR_GREED, MIN_SIGNAL_COUNT,
 )
 
 RSI_OVERSOLD = 30
@@ -62,10 +62,13 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         score += SCORE_PRICE_BELOW_EMA
         signals.append(f"Price slipped below its short-term trend line (EMA {EMA_SHORT}: {_fmt(last['ema_short'])})")
 
-    # 20 EMA below 50 EMA
-    if pd.notna(last["ema_short"]) and pd.notna(last["ema_long"]) and last["ema_short"] < last["ema_long"]:
-        score += SCORE_EMA_CROSS
-        signals.append(f"Short-term trend crossed below long-term trend — death cross")
+    # EMA trend alignment: bonus if aligned with direction, penalty if counter-trend
+    if pd.notna(last["ema_short"]) and pd.notna(last["ema_long"]):
+        if last["ema_short"] < last["ema_long"]:
+            score += SCORE_EMA_ALIGN
+            signals.append("Bearish trend structure confirmed: short-term below long-term trend")
+        else:
+            score -= SCORE_EMA_COUNTER  # silent penalty — trading against the trend
 
     # Bearish engulfing
     prev_green   = prev["close"] > prev["open"]
@@ -89,7 +92,17 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         score += SCORE_LOWER_HIGH
         signals.append("Price making lower highs — uptrend is weakening")
 
-    return min(score, 100), signals
+    # Short-term momentum: 2+ of last 3 candles bearish
+    recent_3 = df.iloc[-4:-1]
+    bear_candles = sum(
+        1 for _, r in recent_3.iterrows()
+        if float(r["close"]) < float(r["open"])
+    )
+    if bear_candles >= 2:
+        score += SCORE_MOMENTUM
+        signals.append(f"Short-term momentum bearish: {bear_candles}/3 recent candles closed red")
+
+    return max(0, min(score, 100)), signals
 
 
 def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
@@ -115,14 +128,17 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         score += SCORE_PRICE_BELOW_EMA
         signals.append(f"Price climbed back above its short-term trend line (EMA {EMA_SHORT}: {_fmt(last['ema_short'])})")
 
-    # 20 EMA above 50 EMA
-    if pd.notna(last["ema_short"]) and pd.notna(last["ema_long"]) and last["ema_short"] > last["ema_long"]:
-        score += SCORE_EMA_CROSS
-        signals.append(f"Short-term trend crossed above long-term trend — golden cross")
+    # EMA trend alignment: bonus if aligned with direction, penalty if counter-trend
+    if pd.notna(last["ema_short"]) and pd.notna(last["ema_long"]):
+        if last["ema_short"] > last["ema_long"]:
+            score += SCORE_EMA_ALIGN
+            signals.append("Bullish trend structure confirmed: short-term above long-term trend")
+        else:
+            score -= SCORE_EMA_COUNTER  # silent penalty — trading against the trend
 
     # Bullish engulfing
-    prev_red    = prev["close"] < prev["open"]
-    curr_green  = last["close"] > last["open"]
+    prev_red     = prev["close"] < prev["open"]
+    curr_green   = last["close"] > last["open"]
     body_engulfs = last["open"] <= prev["close"] and last["close"] >= prev["open"]
     if prev_red and curr_green and body_engulfs:
         score += SCORE_BEAR_ENGULF
@@ -142,7 +158,17 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         score += SCORE_LOWER_HIGH
         signals.append("Price making higher lows — downtrend is weakening")
 
-    return min(score, 100), signals
+    # Short-term momentum: 2+ of last 3 candles bullish
+    recent_3 = df.iloc[-4:-1]
+    bull_candles = sum(
+        1 for _, r in recent_3.iterrows()
+        if float(r["close"]) > float(r["open"])
+    )
+    if bull_candles >= 2:
+        score += SCORE_MOMENTUM
+        signals.append(f"Short-term momentum bullish: {bull_candles}/3 recent candles closed green")
+
+    return max(0, min(score, 100)), signals
 
 
 def _apply_fear_greed(value: int) -> tuple[int, int, str, str]:
@@ -181,6 +207,12 @@ def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = 
         if fg_bear and bear_score >= 30:
             bear_score = min(bear_score + fg_bear, 100)
             bear_signals.append(fg_bear_sig)
+
+    # Require minimum signal count — suppress low-confluence setups entirely
+    if len(bear_signals) < MIN_SIGNAL_COUNT:
+        bear_score, bear_signals = 0, []
+    if len(bull_signals) < MIN_SIGNAL_COUNT:
+        bull_score, bull_signals = 0, []
 
     indicators = {
         "close":       last["close"],

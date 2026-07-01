@@ -25,7 +25,6 @@ from telegram_bot import (
 )
 import positions as pos_tracker
 import signal_log
-import ai_filter
 
 COMMAND_POLL_INTERVAL = 10
 
@@ -117,44 +116,7 @@ def _scan_one(
                 if key in _active_signals:
                     print(f"    ⏭  {display} ({direction}) already active — skipping")
                     continue
-                # Fetch higher-timeframe data for AI context
-                df_htf    = None
-                htf_label = "4h" if market == "Crypto" else "1d"
-                try:
-                    if market == "Crypto":
-                        df_htf = fetch_fn(sym_info["symbol"], timeframe="4h")
-                    else:
-                        df_htf = fetch_fn(sym_info["symbol"], interval="1d", period="90d")
-                except Exception:
-                    pass
-
-                # AI quality gate — suppress LOW confidence signals
-                ai         = ai_filter.assess_signal(
-                    display, direction, score, signals, indicators, df,
-                    df_htf=df_htf, htf_label=htf_label,
-                )
-                conf       = ai.get("confidence", "MEDIUM")
-                reasoning  = ai.get("reasoning", "")
-                entry_note = ai.get("entry_note", "")
-                watch_lvl  = ai.get("watch_level")
-                print(f"    🤖  AI: {conf} — {reasoning}")
-                if conf == "LOW":
-                    print(f"    ⏭  {display} ({direction}) suppressed — LOW confidence")
-                    continue
-
-                badge     = "🟢 HIGH" if conf == "HIGH" else "🟡 MEDIUM"
-                ai_lines  = [f"<b>AI ({badge}):</b> <i>{html_escape(reasoning)}</i>"]
-                if entry_note:
-                    ai_lines.append(f"💡 {html_escape(entry_note)}")
-                if watch_lvl is not None:
-                    try:
-                        ai_lines.append(f"👁 Watch: <code>{float(watch_lvl):,.5g}</code>")
-                    except (ValueError, TypeError):
-                        pass
-                ai_header = "\n".join(ai_lines) + "\n\n"
-
                 card = format_signal_card(display, market, timeframe, direction, score, signals, indicators)
-                card = ai_header + card
                 if send_message(token, chat_id, card):
                     _active_signals.add(key)
                     _save_active_signals(_active_signals)

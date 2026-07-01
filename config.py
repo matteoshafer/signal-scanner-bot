@@ -28,7 +28,8 @@ FOREX_SYMBOLS = [
 # ── Timing ────────────────────────────────────────────────────────────────────
 
 SCAN_INTERVAL = 300          # seconds between full scans (5 min)
-SCORE_THRESHOLD = 55         # minimum score to fire a Telegram alert
+SCORE_THRESHOLD = 65         # minimum score to fire a Telegram alert
+MIN_SIGNAL_COUNT = 3         # minimum number of triggered conditions to fire
 
 # ── Timeframes ────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,9 @@ SCORE_FEAR_GREED       = 20  # max points from Fear & Greed index (crypto only, 
 SCORE_RSI_REJECTION    = 25
 SCORE_MACD_CROSSOVER   = 25
 SCORE_PRICE_BELOW_EMA  = 15
-SCORE_EMA_CROSS        = 15
+SCORE_EMA_ALIGN        = 20  # bonus when signal aligns with EMA trend structure
+SCORE_EMA_COUNTER      = 15  # penalty subtracted when signal opposes EMA trend
+SCORE_MOMENTUM         = 10  # bonus when recent candles confirm signal direction
 SCORE_BEAR_ENGULF      = 20
 SCORE_HIGH_VOL_RED     = 15
-SCORE_LOWER_HIGH       = 15
+SCORE_LOWER_HIGH       = 10  # reduced — pattern is too noisy at 15
