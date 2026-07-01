@@ -21,9 +21,7 @@ STOCK_SYMBOLS = [
 ]
 
 FOREX_SYMBOLS = [
-    {"symbol": "EURUSD=X", "display": "EUR/USD"},
     {"symbol": "GBPUSD=X", "display": "GBP/USD"},
-    {"symbol": "USDJPY=X", "display": "USD/JPY"},
     {"symbol": "AUDUSD=X", "display": "AUD/USD"},
 ]
 

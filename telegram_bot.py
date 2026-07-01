@@ -159,7 +159,7 @@ def format_startup(scan_interval: int = SCAN_INTERVAL, threshold: int = SCORE_TH
         "Markets watched:\n"
         "  Crypto  — BTC, ETH, SOL, ADA, XRP, NEAR\n"
         "  Stocks  — SPY, QQQ, AAPL, TSLA, NVDA\n"
-        "  Forex   — EUR/USD, GBP/USD, USD/JPY, AUD/USD\n\n"
+        "  Forex   — GBP/USD, AUD/USD\n\n"
         "Both bullish and bearish setups are tracked.\n\n"
         "Commands:\n"
         "  /stop         pause scanning\n"

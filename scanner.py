@@ -544,7 +544,7 @@ def handle_command(text: str, state: BotState, token: str, chat_id: str) -> None
             "  e.g. /close BTC 70500\n\n"
             "Symbols: BTC ETH SOL ADA XRP NEAR\n"
             "         SPY QQQ AAPL TSLA NVDA HOOD\n"
-            "         EURUSD GBPUSD USDJPY AUDUSD")
+            "         GBPUSD AUDUSD")
     else:
         send_message(token, chat_id, f"Unknown command. Send /help for the list.")
 
