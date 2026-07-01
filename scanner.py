@@ -25,6 +25,7 @@ from telegram_bot import (
 )
 import positions as pos_tracker
 import signal_log
+import ai_filter
 
 COMMAND_POLL_INTERVAL = 10
 
@@ -116,7 +117,17 @@ def _scan_one(
                 if key in _active_signals:
                     print(f"    ⏭  {display} ({direction}) already active — skipping")
                     continue
+                # AI quality gate — suppress LOW confidence signals
+                ai   = ai_filter.assess_signal(display, direction, score, signals, indicators)
+                conf = ai.get("confidence", "MEDIUM")
+                why  = ai.get("reasoning", "")
+                print(f"    🤖  AI: {conf} — {why}")
+                if conf == "LOW":
+                    print(f"    ⏭  {display} ({direction}) suppressed — LOW confidence")
+                    continue
+                badge = "🟢 HIGH" if conf == "HIGH" else "🟡 MEDIUM"
                 card = format_signal_card(display, market, timeframe, direction, score, signals, indicators)
+                card = f"<b>AI confidence: {badge}</b>\n{card}"
                 if send_message(token, chat_id, card):
                     _active_signals.add(key)
                     _save_active_signals(_active_signals)
