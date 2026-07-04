@@ -111,22 +111,31 @@ def _scan_one(
         )
 
         for direction, score, signals in [("bear", bear_score, bear_signals), ("bull", bull_score, bull_signals)]:
-            key = f"{display}_{direction}"
+            key     = f"{display}_{direction}"
+            sym_key = display.upper()
             if score >= SCORE_THRESHOLD and signals:
                 if key in _active_signals:
                     print(f"    ⏭  {display} ({direction}) already active — skipping")
                     continue
-                card = format_signal_card(display, market, timeframe, direction, score, signals, indicators)
+                # Don't open a position opposing one that's already open
+                open_pos = pos_tracker.get_open()
+                if sym_key in open_pos and open_pos[sym_key]["direction"] != direction:
+                    opp = open_pos[sym_key]["direction"]
+                    print(f"    ⏭  {display} ({direction}) skipped — open {opp} position exists")
+                    continue
+                card = format_signal_card(display, market, timeframe, direction, score, signals, indicators, auto_logged=True)
                 if send_message(token, chat_id, card):
                     _active_signals.add(key)
                     _save_active_signals(_active_signals)
                     print(f"    {'📉' if direction == 'bear' else '📈'}  {direction.upper()} alert sent — {score}/100")
                     alerts_sent.append(f"{display} ({direction})")
-                    # Log every signal regardless of whether user takes the trade
                     price = indicators.get("close", float("nan"))
                     atr   = indicators.get("atr",   float("nan"))
                     if price == price and atr == atr and atr > 0:
                         lvls = pos_tracker.compute_levels(price, atr, direction)
+                        # Auto-log position so TP/SL alerts fire and P&L is tracked
+                        if sym_key not in pos_tracker.get_open():
+                            pos_tracker.add(display, direction, price, lvls)
                         signal_log.log_signal(
                             symbol=display, direction=direction, score=score,
                             entry_price=price, stop=lvls["stop"], tp1=lvls["tp1"],
@@ -240,6 +249,10 @@ def _check_positions(token: str, chat_id: str) -> None:
             if event == "stop":
                 msg = format_sl_alert(symbol, direction, entry, pos["stop"], current)
                 send_message(token, chat_id, msg)
+                pos_tracker.close(symbol, close_price=pos["stop"])
+                _active_signals.discard(f"{symbol}_bull")
+                _active_signals.discard(f"{symbol}_bear")
+                _save_active_signals(_active_signals)
                 print(f"  🛑 {symbol} stop hit at {current}")
 
             elif event.startswith("tp"):
@@ -250,6 +263,11 @@ def _check_positions(token: str, chat_id: str) -> None:
                 ]
                 msg = format_tp_alert(symbol, direction, event, entry, pos[event], current, remaining)
                 send_message(token, chat_id, msg)
+                if event == "tp3":
+                    pos_tracker.close(symbol, close_price=pos["tp3"])
+                    _active_signals.discard(f"{symbol}_bull")
+                    _active_signals.discard(f"{symbol}_bear")
+                    _save_active_signals(_active_signals)
                 print(f"  🎯 {symbol} {event} hit at {current}")
 
 

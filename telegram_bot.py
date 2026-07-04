@@ -277,14 +277,15 @@ def _entry_quality(score: int, n_signals: int, rsi: float, direction: str) -> st
 
 
 def format_signal_card(
-    display:    str,
-    market:     str,
-    timeframe:  str,
-    direction:  str,
-    score:      int,
-    signals:    list[str],
-    indicators: dict,
-    on_demand:  bool = False,
+    display:     str,
+    market:      str,
+    timeframe:   str,
+    direction:   str,
+    score:       int,
+    signals:     list[str],
+    indicators:  dict,
+    on_demand:   bool = False,
+    auto_logged: bool = False,
 ) -> str:
     price      = indicators.get("close",      float("nan"))
     rsi        = indicators.get("rsi",        float("nan"))
@@ -329,7 +330,8 @@ def format_signal_card(
             f"  Target 2:    <code>{fmt(lvls['tp2'])}</code>  (+{pct(lvls['tp2_pct'])})  → take 33%\n"
             f"  Target 3:    <code>{fmt(lvls['tp3'])}</code>  (+{pct(lvls['tp3_pct'])})  → take 34%\n\n"
             + (f"  {sizing_rec}\n\n" if sizing_rec else "")
-            + f"  To track: <code>{trade_cmd}</code>\n"
+            + (f"  📊 Position auto-logged — I'll alert you at each TP and your stop\n"
+               if auto_logged else f"  To track: <code>{trade_cmd}</code>\n")
         )
     else:
         trade_section = ""
