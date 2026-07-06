@@ -71,3 +71,8 @@ SCORE_MOMENTUM         = 10  # bonus when recent candles confirm signal directio
 SCORE_BEAR_ENGULF      = 20
 SCORE_HIGH_VOL_RED     = 15
 SCORE_LOWER_HIGH       = 10  # reduced — pattern is too noisy at 15
+SCORE_RSI_DIVERGENCE   = 20  # RSI divergence (price vs momentum disagree — strong reversal signal)
+SCORE_HAMMER           = 15  # hammer (bull) or shooting star (bear) candlestick pattern
+SCORE_MACD_HISTOGRAM   = 10  # MACD histogram expanding in signal direction
+
+ATR_MIN_PCT            = 0.002  # suppress signals when ATR < 0.2% of price (dead / ranging market)
