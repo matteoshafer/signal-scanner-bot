@@ -25,6 +25,7 @@ from telegram_bot import (
 )
 import positions as pos_tracker
 import signal_log
+import adaptive
 
 COMMAND_POLL_INTERVAL = 10
 
@@ -111,9 +112,11 @@ def _scan_one(
         )
 
         for direction, score, signals in [("bear", bear_score, bear_signals), ("bull", bull_score, bull_signals)]:
-            key     = f"{display}_{direction}"
-            sym_key = display.upper()
-            if score >= SCORE_THRESHOLD and signals:
+            key            = f"{display}_{direction}"
+            sym_key        = display.upper()
+            adj            = adaptive.get_score_adjustment(display, direction)
+            effective_score = score + adj
+            if effective_score >= SCORE_THRESHOLD and signals:
                 if key in _active_signals:
                     print(f"    ⏭  {display} ({direction}) already active — skipping")
                     continue
@@ -127,7 +130,8 @@ def _scan_one(
                 if send_message(token, chat_id, card):
                     _active_signals.add(key)
                     _save_active_signals(_active_signals)
-                    print(f"    {'📉' if direction == 'bear' else '📈'}  {direction.upper()} alert sent — {score}/100")
+                    adj_str = f" (adaptive {adj:+d})" if adj != 0 else ""
+                    print(f"    {'📉' if direction == 'bear' else '📈'}  {direction.upper()} alert sent — {score}/100{adj_str}")
                     alerts_sent.append(f"{display} ({direction})")
                     price = indicators.get("close", float("nan"))
                     atr   = indicators.get("atr",   float("nan"))

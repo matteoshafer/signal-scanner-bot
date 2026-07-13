@@ -76,3 +76,10 @@ SCORE_HAMMER           = 15  # hammer (bull) or shooting star (bear) candlestick
 SCORE_MACD_HISTOGRAM   = 10  # MACD histogram expanding in signal direction
 
 ATR_MIN_PCT            = 0.002  # suppress signals when ATR < 0.2% of price (dead / ranging market)
+
+# ── ADX trend-strength regime ─────────────────────────────────────────────────
+ADX_PERIOD        = 14   # standard ADX window
+ADX_TREND_MIN     = 25   # ADX above this = strong directional trend
+ADX_RANGE_MAX     = 20   # ADX below this = ranging / choppy — reduce scores
+SCORE_ADX_TREND   = 15   # bonus when ADX confirms a strong trend in signal direction
+SCORE_ADX_RANGING = 15   # silent penalty when market is ranging (subtracted, not shown)

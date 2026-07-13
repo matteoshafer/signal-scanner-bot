@@ -11,10 +11,12 @@ from config import (
     EMA_SHORT, EMA_LONG,
     VOLUME_MA_PERIOD, VOLUME_MULTIPLIER,
     LOWER_HIGH_LOOKBACK,
+    ADX_PERIOD, ADX_TREND_MIN, ADX_RANGE_MAX,
     SCORE_RSI_REJECTION, SCORE_MACD_CROSSOVER,
     SCORE_PRICE_BELOW_EMA, SCORE_EMA_ALIGN, SCORE_EMA_COUNTER, SCORE_MOMENTUM,
     SCORE_BEAR_ENGULF, SCORE_HIGH_VOL_RED, SCORE_LOWER_HIGH,
     SCORE_RSI_DIVERGENCE, SCORE_HAMMER, SCORE_MACD_HISTOGRAM,
+    SCORE_ADX_TREND, SCORE_ADX_RANGING,
     SCORE_FEAR_GREED, MIN_SIGNAL_COUNT, ATR_MIN_PCT,
 )
 
@@ -31,6 +33,10 @@ def _add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_long"]  = ta.trend.EMAIndicator(close=df["close"], window=EMA_LONG).ema_indicator()
     df["vol_ma"]    = df["volume"].rolling(window=VOLUME_MA_PERIOD).mean()
     df["atr"]       = ta.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
+    adx_obj         = ta.trend.ADXIndicator(df["high"], df["low"], df["close"], window=ADX_PERIOD)
+    df["adx"]       = adx_obj.adx()
+    df["di_pos"]    = adx_obj.adx_pos()
+    df["di_neg"]    = adx_obj.adx_neg()
     return df
 
 
@@ -71,6 +77,17 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         else:
             score -= SCORE_EMA_COUNTER
 
+    # ADX regime: strong bearish trend = bonus, ranging market = silent penalty
+    if pd.notna(last["adx"]) and pd.notna(last["di_neg"]) and pd.notna(last["di_pos"]):
+        adx    = float(last["adx"])
+        di_neg = float(last["di_neg"])
+        di_pos = float(last["di_pos"])
+        if adx > ADX_TREND_MIN and di_neg > di_pos:
+            score += SCORE_ADX_TREND
+            signals.append(f"Strong bearish trend confirmed by ADX ({adx:.0f}) — high-conviction directional move")
+        elif adx < ADX_RANGE_MAX:
+            score -= SCORE_ADX_RANGING  # choppy market, don't trade it
+
     # Bearish engulfing
     prev_green   = prev["close"] > prev["open"]
     curr_red     = last["close"] < last["open"]
@@ -95,10 +112,7 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
 
     # Short-term momentum: 2+ of last 3 candles bearish
     recent_3 = df.iloc[-4:-1]
-    bear_candles = sum(
-        1 for _, r in recent_3.iterrows()
-        if float(r["close"]) < float(r["open"])
-    )
+    bear_candles = sum(1 for _, r in recent_3.iterrows() if float(r["close"]) < float(r["open"]))
     if bear_candles >= 2:
         score += SCORE_MOMENTUM
         signals.append(f"Short-term momentum bearish: {bear_candles}/3 recent candles closed red")
@@ -108,8 +122,7 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
     hi_wick = float(last["high"]) - float(max(last["close"], last["open"]))
     lo_wick = float(min(last["close"], last["open"])) - float(last["low"])
     c_range = float(last["high"]) - float(last["low"])
-    if (c_range > 0 and body > 0 and
-            hi_wick >= 2 * body and lo_wick <= 0.5 * body and body / c_range <= 0.35):
+    if c_range > 0 and body > 0 and hi_wick >= 2 * body and lo_wick <= 0.5 * body and body / c_range <= 0.35:
         score += SCORE_HAMMER
         signals.append("Shooting star: sellers rejected the highs — strong reversal candle")
 
@@ -117,16 +130,13 @@ def _check_bearish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
     if len(df) >= 20:
         win = df.iloc[-20:]
         mid = 10
-        pe  = win["close"].iloc[:mid].max()
-        pl  = win["close"].iloc[mid:].max()
-        re  = win["rsi"].iloc[:mid].max()
-        rl  = win["rsi"].iloc[mid:].max()
-        if (pd.notna(re) and pd.notna(rl) and
-                pl > pe * 1.001 and rl < re - 3 and rl > 50):
+        pe, pl = win["close"].iloc[:mid].max(), win["close"].iloc[mid:].max()
+        re, rl = win["rsi"].iloc[:mid].max(),   win["rsi"].iloc[mid:].max()
+        if pd.notna(re) and pd.notna(rl) and pl > pe * 1.001 and rl < re - 3 and rl > 50:
             score += SCORE_RSI_DIVERGENCE
-            signals.append("Bearish RSI divergence: price making higher highs but momentum weakening")
+            signals.append("Bearish RSI divergence: price rising but momentum weakening")
 
-    # MACD histogram expanding bearishly (momentum accelerating)
+    # MACD histogram expanding bearishly
     hist = df["macd"] - df["macd_sig"]
     h    = hist.iloc[-4:]
     if h.notna().all() and h.iloc[-1] < 0 and h.iloc[-1] < h.iloc[-2] < h.iloc[-3]:
@@ -167,6 +177,17 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
         else:
             score -= SCORE_EMA_COUNTER
 
+    # ADX regime: strong bullish trend = bonus, ranging market = silent penalty
+    if pd.notna(last["adx"]) and pd.notna(last["di_pos"]) and pd.notna(last["di_neg"]):
+        adx    = float(last["adx"])
+        di_pos = float(last["di_pos"])
+        di_neg = float(last["di_neg"])
+        if adx > ADX_TREND_MIN and di_pos > di_neg:
+            score += SCORE_ADX_TREND
+            signals.append(f"Strong bullish trend confirmed by ADX ({adx:.0f}) — high-conviction directional move")
+        elif adx < ADX_RANGE_MAX:
+            score -= SCORE_ADX_RANGING  # choppy market, don't trade it
+
     # Bullish engulfing
     prev_red     = prev["close"] < prev["open"]
     curr_green   = last["close"] > last["open"]
@@ -191,10 +212,7 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
 
     # Short-term momentum: 2+ of last 3 candles bullish
     recent_3 = df.iloc[-4:-1]
-    bull_candles = sum(
-        1 for _, r in recent_3.iterrows()
-        if float(r["close"]) > float(r["open"])
-    )
+    bull_candles = sum(1 for _, r in recent_3.iterrows() if float(r["close"]) > float(r["open"]))
     if bull_candles >= 2:
         score += SCORE_MOMENTUM
         signals.append(f"Short-term momentum bullish: {bull_candles}/3 recent candles closed green")
@@ -204,8 +222,7 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
     lo_wick = float(min(last["close"], last["open"])) - float(last["low"])
     hi_wick = float(last["high"]) - float(max(last["close"], last["open"]))
     c_range = float(last["high"]) - float(last["low"])
-    if (c_range > 0 and body > 0 and
-            lo_wick >= 2 * body and hi_wick <= 0.5 * body and body / c_range <= 0.35):
+    if c_range > 0 and body > 0 and lo_wick >= 2 * body and hi_wick <= 0.5 * body and body / c_range <= 0.35:
         score += SCORE_HAMMER
         signals.append("Hammer candle: buyers pushed price back up from the lows — strong reversal signal")
 
@@ -213,16 +230,13 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
     if len(df) >= 20:
         win = df.iloc[-20:]
         mid = 10
-        pe  = win["close"].iloc[:mid].min()
-        pl  = win["close"].iloc[mid:].min()
-        re  = win["rsi"].iloc[:mid].min()
-        rl  = win["rsi"].iloc[mid:].min()
-        if (pd.notna(re) and pd.notna(rl) and
-                pl < pe * 0.999 and rl > re + 3 and rl < 50):
+        pe, pl = win["close"].iloc[:mid].min(), win["close"].iloc[mid:].min()
+        re, rl = win["rsi"].iloc[:mid].min(),   win["rsi"].iloc[mid:].min()
+        if pd.notna(re) and pd.notna(rl) and pl < pe * 0.999 and rl > re + 3 and rl < 50:
             score += SCORE_RSI_DIVERGENCE
             signals.append("Bullish RSI divergence: price making lower lows but momentum recovering")
 
-    # MACD histogram expanding bullishly (momentum accelerating)
+    # MACD histogram expanding bullishly
     hist = df["macd"] - df["macd_sig"]
     h    = hist.iloc[-4:]
     if h.notna().all() and h.iloc[-1] > 0 and h.iloc[-1] > h.iloc[-2] > h.iloc[-3]:
@@ -233,7 +247,6 @@ def _check_bullish(df: pd.DataFrame, has_volume: bool) -> tuple[int, list[str]]:
 
 
 def _apply_fear_greed(value: int) -> tuple[int, int, str, str]:
-    """Returns (bull_points, bear_points, bull_signal, bear_signal) from Fear & Greed value."""
     if value <= 24:
         return SCORE_FEAR_GREED, 0, f"Market in Extreme Fear ({value}/100) — historically a buying opportunity", ""
     if value <= 44:
@@ -242,7 +255,7 @@ def _apply_fear_greed(value: int) -> tuple[int, int, str, str]:
         return 0, SCORE_FEAR_GREED, "", f"Market in Extreme Greed ({value}/100) — historically a sell signal"
     if value >= 56:
         return 0, SCORE_FEAR_GREED // 2, "", f"Elevated market greed ({value}/100) — contrarian bearish lean"
-    return 0, 0, "", ""  # Neutral (45-55)
+    return 0, 0, "", ""
 
 
 def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = None) -> tuple[int, list[str], int, list[str], dict]:
@@ -260,7 +273,7 @@ def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = 
     bear_score, bear_signals = _check_bearish(df, has_volume)
     bull_score, bull_signals = _check_bullish(df, has_volume)
 
-    # Penalise signals when market is too quiet (low ATR = choppy / no real trend)
+    # Penalise signals when market is too quiet (low ATR = no real trend)
     if pd.notna(last["atr"]) and float(last["close"]) > 0:
         atr_pct = float(last["atr"]) / float(last["close"])
         if atr_pct < ATR_MIN_PCT:
@@ -276,7 +289,7 @@ def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = 
             bear_score = min(bear_score + fg_bear, 100)
             bear_signals.append(fg_bear_sig)
 
-    # Require minimum signal count — suppress low-confluence setups entirely
+    # Require minimum signal count — suppress low-confluence setups
     if len(bear_signals) < MIN_SIGNAL_COUNT:
         bear_score, bear_signals = 0, []
     if len(bull_signals) < MIN_SIGNAL_COUNT:
@@ -290,6 +303,9 @@ def analyze(df: pd.DataFrame, has_volume: bool = True, fear_greed: int | None = 
         "macd":        last["macd"],
         "macd_signal": last["macd_sig"],
         "atr":         last["atr"],
+        "adx":         last["adx"],
+        "di_pos":      last["di_pos"],
+        "di_neg":      last["di_neg"],
         "fear_greed":  fear_greed,
     }
 
