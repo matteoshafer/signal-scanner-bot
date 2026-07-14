@@ -7,7 +7,6 @@ CRYPTO_SYMBOLS = [
     {"symbol": "ETH/USD",  "display": "ETH/USD"},
     {"symbol": "SOL/USD",  "display": "SOL/USD"},
     {"symbol": "ADA/USD",  "display": "ADA/USD"},
-    {"symbol": "XRP/USD",  "display": "XRP/USD"},
     {"symbol": "NEAR/USD", "display": "NEAR/USD"},
 ]
 
@@ -20,9 +19,7 @@ STOCK_SYMBOLS = [
     {"symbol": "HOOD", "display": "HOOD"},
 ]
 
-FOREX_SYMBOLS = [
-    {"symbol": "AUDUSD=X", "display": "AUD/USD"},
-]
+FOREX_SYMBOLS = []
 
 # ── Timing ────────────────────────────────────────────────────────────────────
 
