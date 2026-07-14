@@ -21,7 +21,6 @@ STOCK_SYMBOLS = [
 ]
 
 FOREX_SYMBOLS = [
-    {"symbol": "GBPUSD=X", "display": "GBP/USD"},
     {"symbol": "AUDUSD=X", "display": "AUD/USD"},
 ]
 
