@@ -16,7 +16,6 @@ STOCK_SYMBOLS = [
     {"symbol": "AAPL", "display": "AAPL"},
     {"symbol": "TSLA", "display": "TSLA"},
     {"symbol": "NVDA", "display": "NVDA"},
-    {"symbol": "HOOD", "display": "HOOD"},
 ]
 
 FOREX_SYMBOLS = []
